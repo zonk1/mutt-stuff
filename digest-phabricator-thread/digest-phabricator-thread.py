@@ -36,6 +36,11 @@ def filter_stuff(body):
             continue
         elif line.startswith('Cc: '):
             continue
+        elif line.startswith('https://git.dtone.xyz/'):
+            skip_lines = 1
+            continue
+        elif line.startswith('-- '):
+            break
         out.append(line)
     return '\n'.join(out)
 
@@ -50,6 +55,8 @@ def maybe_decode(content_transfer_encoding, data):
         # f.ck output_f close, cStringIO doesn't work with `with`
         output_f.seek(0)
         return output_f.read()
+    elif content_transfer_encoding == 'base64':
+        return data.decode('base64')
     return data
 
 
@@ -103,15 +110,15 @@ def main(input_file, output_file, debug):
         if isinstance(payload, type([])):
             for submsg in payload:
                 subpart_headers = normalize_headers(submsg._headers)
-                # I should probably complain when none of the subparts is plain
                 if subpart_headers['content-type'].startswith('text/plain'):
-                    print subpart_headers
                     # add headers from multipart subpart
                     mbox_usable[-1].headers.update(subpart_headers)
                     mbox_usable[-1].body = maybe_decode(
                         mbox_usable[-1].headers['content-transfer-encoding'],
                         submsg.get_payload())
                     break
+            else:
+                print "warning: message doesn't have text/plain part"
         else:
             mbox_usable[-1].body = maybe_decode(
                 mbox_usable[-1].headers['content-transfer-encoding'],
