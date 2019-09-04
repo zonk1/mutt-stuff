@@ -53,6 +53,14 @@ def maybe_decode(content_transfer_encoding, data):
     return data
 
 
+def normalize_headers(headers):
+        # take a list of tuples and make it dict
+        # FIXME: this breaks some multiline headers, that I do not need
+        # FIXME: repeated headers are overwritten and just last value is present in dict
+        return dict([(h.lower(), v.replace('\n', ' '))
+                     for (h, v) in headers])
+
+
 @click.command()
 @click.option('-i', '--input-file', default='-',
               help='Input file with list of emails [stdin]', type=str)
@@ -89,11 +97,25 @@ def main(input_file, output_file, debug):
     mbox_usable = []
     for msg in mbox:
         mbox_usable.append(MyMail())
-        mbox_usable[-1].headers = dict([(h.lower(), v.replace('\n', ' '))
-                                        for (h, v) in msg._headers])
-        mbox_usable[-1].body = maybe_decode(
-            mbox_usable[-1].headers['content-transfer-encoding'],
-            msg.get_payload())
+        mbox_usable[-1].headers = normalize_headers(msg._headers)
+        # Get the only part or the text/plain one if there are multiple
+        payload = msg.get_payload()
+        if isinstance(payload, type([])):
+            for submsg in payload:
+                subpart_headers = normalize_headers(submsg._headers)
+                # I should probably complain when none of the subparts is plain
+                if subpart_headers['content-type'].startswith('text/plain'):
+                    print subpart_headers
+                    # add headers from multipart subpart
+                    mbox_usable[-1].headers.update(subpart_headers)
+                    mbox_usable[-1].body = maybe_decode(
+                        mbox_usable[-1].headers['content-transfer-encoding'],
+                        submsg.get_payload())
+                    break
+        else:
+            mbox_usable[-1].body = maybe_decode(
+                mbox_usable[-1].headers['content-transfer-encoding'],
+                payload)
 
     mbox_usable.sort(key=lambda x: parsedate(x.headers['date']))
 
